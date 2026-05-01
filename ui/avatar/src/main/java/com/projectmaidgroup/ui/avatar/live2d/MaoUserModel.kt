@@ -10,7 +10,6 @@ import com.live2d.sdk.cubism.framework.model.CubismUserModel
 import com.live2d.sdk.cubism.framework.motion.CubismMotion
 import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid
 import kotlin.random.Random
-import com.projectmaidgroup.ui.avatar.AssetUtil
 import com.projectmaidgroup.ui.avatar.AvatarEmotion
 import com.projectmaidgroup.ui.avatar.AvatarEmotionMapper
 import com.projectmaidgroup.ui.avatar.Live2DMotionCommand
