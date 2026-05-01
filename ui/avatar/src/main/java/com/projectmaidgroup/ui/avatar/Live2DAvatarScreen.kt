@@ -9,7 +9,9 @@ fun Live2DAvatarScreen(
     model: Live2DModelSpec,
     modifier: Modifier = Modifier,
     backgroundColor: Int,
-    replyMotionTrigger: Int
+    replyMotionTrigger: Int,
+    motionCommand: Live2DMotionCommand? = null,
+    motionCommandTrigger: Int = 0
 ) {
     AndroidView(
         modifier = modifier,
@@ -25,8 +27,17 @@ fun Live2DAvatarScreen(
 
             if (view.lastReplyMotionTrigger != replyMotionTrigger) {
                 view.lastReplyMotionTrigger = replyMotionTrigger
+
                 if (replyMotionTrigger > 0) {
                     view.playReplyMotion()
+                }
+            }
+
+            if (view.lastMotionCommandTrigger != motionCommandTrigger) {
+                view.lastMotionCommandTrigger = motionCommandTrigger
+
+                if (motionCommandTrigger > 0 && motionCommand != null) {
+                    view.playMotion(motionCommand)
                 }
             }
         }

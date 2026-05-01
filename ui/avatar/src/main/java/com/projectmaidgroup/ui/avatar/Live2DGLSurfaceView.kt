@@ -33,6 +33,13 @@ class Live2DGLSurfaceView @JvmOverloads constructor(
         requestRender()
     }
 
+    fun playMotion(command: Live2DMotionCommand) {
+        queueEvent {
+            live2dRenderer.playMotion(command)
+        }
+        requestRender()
+    }
+
     fun setClearColor(colorInt: Int) {
         queueEvent { live2dRenderer.setClearColor(colorInt) }
         requestRender()

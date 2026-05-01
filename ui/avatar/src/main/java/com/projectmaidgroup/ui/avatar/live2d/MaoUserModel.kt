@@ -10,6 +10,11 @@ import com.live2d.sdk.cubism.framework.model.CubismUserModel
 import com.live2d.sdk.cubism.framework.motion.CubismMotion
 import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid
 import kotlin.random.Random
+import com.projectmaidgroup.ui.avatar.AssetUtil
+import com.projectmaidgroup.ui.avatar.AvatarEmotion
+import com.projectmaidgroup.ui.avatar.AvatarEmotionMapper
+import com.projectmaidgroup.ui.avatar.Live2DMotionCommand
+import org.json.JSONObject
 
 class MaoUserModel(
     private val context: Context
@@ -18,6 +23,7 @@ class MaoUserModel(
     private val loadedTextureIds = mutableListOf<Int>()
     private var androidRenderer: CubismRendererAndroid? = null
 
+    private val motionGroups = linkedMapOf<String, LinkedHashMap<String, CubismMotion>>()
     private val idleMotions = linkedMapOf<String, CubismMotion>()
     private val tapBodyMotions = linkedMapOf<String, CubismMotion>()
 
@@ -40,8 +46,17 @@ class MaoUserModel(
         loadPhysicsIfExists(setting, modelDir)
         loadPoseIfExists(setting, modelDir)
 
-        loadMotionGroup(setting, modelDir, "Idle", loop = true, target = idleMotions)
-        loadMotionGroup(setting, modelDir, "TapBody", loop = false, target = tapBodyMotions)
+        loadAllMotionGroups(
+            setting = setting,
+            modelDir = modelDir,
+            modelJson = modelJson
+        )
+
+        idleMotions.clear()
+        tapBodyMotions.clear()
+
+        motionGroups["Idle"]?.let { idleMotions.putAll(it) }
+        motionGroups["TapBody"]?.let { tapBodyMotions.putAll(it) }
 
         modelMatrix = CubismModelMatrix.create(model.canvasWidth, model.canvasHeight).apply {
             setWidth(2.6f)
@@ -100,6 +115,7 @@ class MaoUserModel(
     ) {
         try {
             val motionCount = setting.getMotionCount(group)
+
             for (i in 0 until motionCount) {
                 val motionFile = setting.getMotionFileName(group, i)
                 val motionBytes = AssetUtil.readBytes(context, "$modelDir/$motionFile")
@@ -110,10 +126,14 @@ class MaoUserModel(
                     motion.setLoopFadeIn(loop)
 
                     val fadeIn = setting.getMotionFadeInTimeValue(group, i)
-                    if (fadeIn >= 0f) motion.setFadeInTime(fadeIn)
+                    if (fadeIn >= 0f) {
+                        motion.setFadeInTime(fadeIn)
+                    }
 
                     val fadeOut = setting.getMotionFadeOutTimeValue(group, i)
-                    if (fadeOut >= 0f) motion.setFadeOutTime(fadeOut)
+                    if (fadeOut >= 0f) {
+                        motion.setFadeOutTime(fadeOut)
+                    }
 
                     target[motionFile] = motion
                 }
@@ -142,11 +162,21 @@ class MaoUserModel(
     }
 
     fun playTapMotion() {
-        playRandomMotionFrom(tapBodyMotions)
+        playMotion(
+            Live2DMotionCommand(
+                emotion = AvatarEmotion.NEUTRAL,
+                group = "TapBody"
+            )
+        )
     }
 
     fun playRandomReplyMotion() {
-        playRandomMotionFrom(tapBodyMotions)
+        playMotion(
+            Live2DMotionCommand(
+                emotion = AvatarEmotion.HAPPY,
+                group = "TapBody"
+            )
+        )
     }
 
     private fun playRandomMotionFrom(source: LinkedHashMap<String, CubismMotion>) {
@@ -208,11 +238,116 @@ class MaoUserModel(
         renderer.mvpMatrix = projection
         renderer.drawModel()
     }
+    private fun loadAllMotionGroups(
+        setting: CubismModelSettingJson,
+        modelDir: String,
+        modelJson: String
+    ) {
+        motionGroups.clear()
 
+        val modelJsonText = try {
+            context.assets.open("$modelDir/$modelJson")
+                .bufferedReader()
+                .use { it.readText() }
+        } catch (t: Throwable) {
+            Log.w("MaoUserModel", "read model json failed", t)
+            null
+        } ?: return
+
+        val motionsJson = try {
+            JSONObject(modelJsonText)
+                .optJSONObject("FileReferences")
+                ?.optJSONObject("Motions")
+        } catch (t: Throwable) {
+            Log.w("MaoUserModel", "parse motions failed", t)
+            null
+        } ?: return
+
+        val keys = motionsJson.keys()
+
+        while (keys.hasNext()) {
+            val group = keys.next()
+            val target = linkedMapOf<String, CubismMotion>()
+            val loop = group.equals("Idle", ignoreCase = true)
+
+            loadMotionGroup(
+                setting = setting,
+                modelDir = modelDir,
+                group = group,
+                loop = loop,
+                target = target
+            )
+
+            if (target.isNotEmpty()) {
+                motionGroups[group] = target
+            }
+        }
+    }
     fun release() {
         loadedTextureIds.forEach { GLTextureLoader.deleteTexture(it) }
         loadedTextureIds.clear()
         androidRenderer = null
         delete()
+    }
+    fun playEmotion(emotion: AvatarEmotion) {
+        playMotion(AvatarEmotionMapper.toMotionCommand(emotion))
+    }
+
+    fun playMotion(command: Live2DMotionCommand) {
+        val realCommand =
+            if (command.group == null && command.motionFile == null) {
+                AvatarEmotionMapper.toMotionCommand(command.emotion)
+            } else {
+                command
+            }
+
+        val targetMotion = findMotion(realCommand)
+
+        if (targetMotion == null) {
+            Log.w("MaoUserModel", "motion not found: $realCommand")
+            playRandomMotionFrom(tapBodyMotions)
+            return
+        }
+
+        startMotion(targetMotion, realCommand.priority)
+    }
+
+    private fun findMotion(command: Live2DMotionCommand): CubismMotion? {
+        val groupName = command.group
+        val motionFile = command.motionFile
+
+        if (groupName != null && motionFile != null) {
+            return motionGroups[groupName]?.get(motionFile)
+        }
+
+        if (groupName != null) {
+            val group = motionGroups[groupName] ?: return null
+            if (group.isEmpty()) return null
+            return group.values.toList()[Random.nextInt(group.size)]
+        }
+
+        if (motionFile != null) {
+            motionGroups.values.forEach { group ->
+                group[motionFile]?.let { return it }
+            }
+        }
+
+        return null
+    }
+
+    private fun startMotion(motion: CubismMotion, priority: Int) {
+        try {
+            motionManager.stopAllMotions()
+            motionManager.startMotionPriority(motion, priority)
+            currentMotionStarted = true
+        } catch (t: Throwable) {
+            Log.e("MaoUserModel", "startMotion failed", t)
+        }
+    }
+
+    fun getAvailableMotionNames(): Map<String, List<String>> {
+        return motionGroups.mapValues { entry ->
+            entry.value.keys.toList()
+        }
     }
 }

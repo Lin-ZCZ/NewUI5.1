@@ -9,6 +9,7 @@ import com.live2d.sdk.cubism.framework.CubismFramework
 import com.projectmaidgroup.ui.avatar.live2d.MaoUserModel
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import com.projectmaidgroup.ui.avatar.Live2DMotionCommand
 
 class Live2DRenderer(
     private val context: Context
@@ -27,7 +28,7 @@ class Live2DRenderer(
     private var clearG = 0f
     private var clearB = 0f
     private var clearA = 0f
-
+    private var pendingMotionCommand: Live2DMotionCommand? = null
     fun setModel(spec: Live2DModelSpec) {
         currentSpec = spec
         mao = null
@@ -92,16 +93,32 @@ class Live2DRenderer(
                     pendingTapMotion = false
                     model.playTapMotion()
                 }
+
                 if (pendingReplyMotion) {
                     pendingReplyMotion = false
                     model.playRandomReplyMotion()
                 }
+
+                pendingMotionCommand?.let { command ->
+                    pendingMotionCommand = null
+                    model.playMotion(command)
+                }
+
                 model.update(1f / 60f)
                 model.draw(surfaceWidth, surfaceHeight)
             }
         } catch (t: Throwable) {
             loadFailed = true
             Log.e("Live2DRenderer", "onDrawFrame failed", t)
+        }
+    }
+    fun playMotion(command: Live2DMotionCommand) {
+        val model = mao
+
+        if (model != null) {
+            model.playMotion(command)
+        } else {
+            pendingMotionCommand = command
         }
     }
 }
